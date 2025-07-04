@@ -69,9 +69,25 @@ class LeaderboardResponse(BaseModel):
     leaderboard: List[LeaderboardEntry]
 
 # PUBLIC_INTERFACE
-@app.post("/game/new", response_model=NewGameResponse, tags=["game"], summary="Start a new game session")
+@app.post(
+    "/game/new",
+    response_model=NewGameResponse,
+    tags=["game"],
+    summary="Start a new game session"
+)
+@app.post(
+    "/api/new-game",
+    response_model=NewGameResponse,
+    tags=["game", "api"],
+    summary="[API alias] Start a new game session (returns new user_id and initial game state)"
+)
 def new_game(user_id: Optional[str] = Query(None, description="Provide a user_id to continue; otherwise, a random id is generated.")):
-    """Start a new game and return session info. Returns a new user_id if not provided."""
+    """Start a new game and return session info. Returns a new user_id if not provided.
+
+    This endpoint is also available at /api/new-game for RESTful aliasing.
+    ---
+    - Returns session state and user_id to be used in subsequent requests.
+    """
     if not user_id:
         user_id = str(uuid.uuid4())
     gs = game_logic.new_game_for_user(user_id)
@@ -84,9 +100,23 @@ def new_game(user_id: Optional[str] = Query(None, description="Provide a user_id
     )
 
 # PUBLIC_INTERFACE
-@app.post("/game/guess", response_model=GuessResponse, tags=["game"], summary="Submit a guess for the current game")
+@app.post(
+    "/game/guess",
+    response_model=GuessResponse,
+    tags=["game"],
+    summary="Submit a guess for the current game"
+)
+@app.post(
+    "/api/guess",
+    response_model=GuessResponse,
+    tags=["game", "api"],
+    summary="[API alias] Submit a guess for the current game (returns feedback, state)"
+)
 def make_guess(user_id: str = Query(..., description="Your game user_id"), req: GuessRequest = ...):
-    """Submit a 5-letter guess, receive feedback and update the game session. Returns color feedback per letter."""
+    """Submit a 5-letter guess, receive feedback and update the game session. Returns color feedback per letter.
+
+    This endpoint is also available as /api/guess for easier REST integration.
+    """
     result = game_logic.handle_guess(user_id, req.guess)
     if not result.get("valid"):
         # On errors, always send 400 error with informative message
@@ -103,7 +133,12 @@ def make_guess(user_id: str = Query(..., description="Your game user_id"), req: 
     )
 
 # PUBLIC_INTERFACE
-@app.post("/game/reset", response_model=NewGameResponse, tags=["game"], summary="Reset game session for this user_id")
+@app.post(
+    "/game/reset",
+    response_model=NewGameResponse,
+    tags=["game"],
+    summary="Reset game session for this user_id"
+)
 def reset_game(user_id: str = Query(..., description="Your game user_id")):
     """Reset the game session for this user (starts over with a new word)."""
     gs = game_logic.reset_game(user_id)
@@ -116,7 +151,12 @@ def reset_game(user_id: str = Query(..., description="Your game user_id")):
     )
 
 # PUBLIC_INTERFACE
-@app.get("/game/state", response_model=StateResponse, tags=["game"], summary="Get game state for this user_id")
+@app.get(
+    "/game/state",
+    response_model=StateResponse,
+    tags=["game"],
+    summary="Get game state for this user_id"
+)
 def get_state(user_id: str = Query(..., description="Your game user_id")):
     """Returns the entire game state for the current session."""
     gs = game_logic.get_game_state(user_id)
@@ -131,7 +171,16 @@ def get_state(user_id: str = Query(..., description="Your game user_id")):
     )
 
 # PUBLIC_INTERFACE
-@app.post("/leaderboard/submit", tags=["leaderboard"], summary="Submit completed game to the leaderboard")
+@app.post(
+    "/leaderboard/submit",
+    tags=["leaderboard"],
+    summary="Submit completed game to the leaderboard"
+)
+@app.post(
+    "/api/submit-score",
+    tags=["leaderboard", "api"],
+    summary="[API alias] Submit completed game to the leaderboard and persist score"
+)
 def submit_score(req: SubmitScoreRequest):
     """
     Submit a completed game to the leaderboard.
@@ -139,6 +188,8 @@ def submit_score(req: SubmitScoreRequest):
     - username: Display/player name for leaderboard
     - attempts: Number of attempts taken
     - solved: If True, treated as valid leaderboard entry; otherwise ignored
+
+    This endpoint is also available as /api/submit-score for REST integration.
     """
     if not req.solved:
         return JSONResponse(status_code=400, content={"message": "Score is only recorded for solved games."})
@@ -148,10 +199,23 @@ def submit_score(req: SubmitScoreRequest):
     return {"message": "Score submitted."}
 
 # PUBLIC_INTERFACE
-@app.get("/leaderboard", response_model=LeaderboardResponse, tags=["leaderboard"], summary="Get the leaderboard")
+@app.get(
+    "/leaderboard",
+    response_model=LeaderboardResponse,
+    tags=["leaderboard"],
+    summary="Get the leaderboard"
+)
+@app.get(
+    "/api/leaderboard",
+    response_model=LeaderboardResponse,
+    tags=["leaderboard", "api"],
+    summary="[API alias] Retrieve leaderboard data (top users by fewest attempts)"
+)
 def get_leaderboard():
     """
     Returns current leaderboard: best (lowest attempts) first, ties by timestamp. Top 20 players.
+
+    This endpoint is also available as /api/leaderboard for REST consumption.
     """
     entries = leaderboard.get_leaderboard(limit=20)
     return LeaderboardResponse(leaderboard=[
