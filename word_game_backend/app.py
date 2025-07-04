@@ -7,13 +7,15 @@ from typing import List, Optional
 import uuid
 
 import game_logic
+import leaderboard
 
 app = FastAPI(
     title="Word Guessing Game Backend",
     description="Backend for 5-letter word guessing game. Handles game logic, feedback, and state.",
     version="0.1.0",
     openapi_tags=[
-        {"name": "game", "description": "Word guessing game endpoints"}
+        {"name": "game", "description": "Word guessing game endpoints"},
+        {"name": "leaderboard", "description": "Leaderboard endpoints and score submission"},
     ]
 )
 
@@ -51,6 +53,22 @@ class StateResponse(BaseModel):
     failed: bool
     attempts_left: int
 
+class SubmitScoreRequest(BaseModel):
+    user_id: str = Field(..., description="Your game user_id")
+    username: str = Field(..., description="Display name or player name")
+    attempts: int = Field(..., description="Number of attempts taken to solve the game")
+    solved: bool = Field(..., description="Whether the game was solved (True) or not (False)")
+
+class LeaderboardEntry(BaseModel):
+    rank: int
+    username: str
+    attempts: int
+    timestamp: str
+
+class LeaderboardResponse(BaseModel):
+    leaderboard: List[LeaderboardEntry]
+
+# PUBLIC_INTERFACE
 @app.post("/game/new", response_model=NewGameResponse, tags=["game"], summary="Start a new game session")
 def new_game(user_id: Optional[str] = Query(None, description="Provide a user_id to continue; otherwise, a random id is generated.")):
     """Start a new game and return session info. Returns a new user_id if not provided."""
@@ -65,6 +83,7 @@ def new_game(user_id: Optional[str] = Query(None, description="Provide a user_id
         attempts_left=game_logic.MAX_ATTEMPTS
     )
 
+# PUBLIC_INTERFACE
 @app.post("/game/guess", response_model=GuessResponse, tags=["game"], summary="Submit a guess for the current game")
 def make_guess(user_id: str = Query(..., description="Your game user_id"), req: GuessRequest = ...):
     """Submit a 5-letter guess, receive feedback and update the game session. Returns color feedback per letter."""
@@ -83,6 +102,7 @@ def make_guess(user_id: str = Query(..., description="Your game user_id"), req: 
         message=result["message"]
     )
 
+# PUBLIC_INTERFACE
 @app.post("/game/reset", response_model=NewGameResponse, tags=["game"], summary="Reset game session for this user_id")
 def reset_game(user_id: str = Query(..., description="Your game user_id")):
     """Reset the game session for this user (starts over with a new word)."""
@@ -95,6 +115,7 @@ def reset_game(user_id: str = Query(..., description="Your game user_id")):
         attempts_left=game_logic.MAX_ATTEMPTS
     )
 
+# PUBLIC_INTERFACE
 @app.get("/game/state", response_model=StateResponse, tags=["game"], summary="Get game state for this user_id")
 def get_state(user_id: str = Query(..., description="Your game user_id")):
     """Returns the entire game state for the current session."""
@@ -108,6 +129,34 @@ def get_state(user_id: str = Query(..., description="Your game user_id")):
         failed=gs.failed,
         attempts_left=game_logic.MAX_ATTEMPTS - len(gs.guesses)
     )
+
+# PUBLIC_INTERFACE
+@app.post("/leaderboard/submit", tags=["leaderboard"], summary="Submit completed game to the leaderboard")
+def submit_score(req: SubmitScoreRequest):
+    """
+    Submit a completed game to the leaderboard.
+    - user_id: Session/player id
+    - username: Display/player name for leaderboard
+    - attempts: Number of attempts taken
+    - solved: If True, treated as valid leaderboard entry; otherwise ignored
+    """
+    if not req.solved:
+        return JSONResponse(status_code=400, content={"message": "Score is only recorded for solved games."})
+    if not req.username or len(req.username.strip()) == 0:
+        return JSONResponse(status_code=400, content={"message": "Username required for leaderboard entry."})
+    leaderboard.save_completed_game(req.user_id, req.username.strip(), req.attempts, solved=True)
+    return {"message": "Score submitted."}
+
+# PUBLIC_INTERFACE
+@app.get("/leaderboard", response_model=LeaderboardResponse, tags=["leaderboard"], summary="Get the leaderboard")
+def get_leaderboard():
+    """
+    Returns current leaderboard: best (lowest attempts) first, ties by timestamp. Top 20 players.
+    """
+    entries = leaderboard.get_leaderboard(limit=20)
+    return LeaderboardResponse(leaderboard=[
+        LeaderboardEntry(**entry) for entry in entries
+    ])
 
 if __name__ == "__main__":
     import uvicorn
